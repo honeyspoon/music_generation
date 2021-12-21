@@ -1,10 +1,7 @@
-"""Receive MIDI clock and print out current BPM.
-
-MIDI clock (status 0xF8) is sent 24 times per quarter note by clock generators.
-
-"""
-
 import argparse
+import random
+import sys
+import signal
 import time
 import threading
 from collections import deque
@@ -25,6 +22,13 @@ if available_ports:
     midiout.open_port(0)
 else:
     midiout.open_virtual_port("My virtual output")
+
+def signal_handler(sig, frame):
+    print('cleanup')
+    clear()
+    # m_in.close_port()
+    # del m_in
+    sys.exit(0)
 
 def clear():
     unplay([i for i in range(128)])
@@ -49,19 +53,43 @@ threads = []
 def on_start():
     global running
     print('start', running)
-    # scale = list(theory.major_scale(60))
-    scale = list(theory.harmonic_minor_scale(60))
-    print("scale", theory.note_to_letter(scale[0]))
+
+    scale_type = theory.harmonic_minor_scale
+    # scale_type = theory.major_scale
+
+    base = 60
+
+    scale = list(scale_type(base))
+    print("scale", scale_type.__name__, theory.note_to_letter(scale[0]))
+
+
     while running:
         duration = 120 / bpm
+        if duration > 2 :
+            duration = 0.1
         chord = theory.random_chord(scale)
-        print(chord, duration)
-        play(chord)
-        time.sleep(2 * duration)
+
+        clear()
+        r = random.random()
+        print(r)
+        if r > 0.3 and r < 0.7:
+            print('alone', chord)
+            play(chord)
+        elif r > 0.7:
+            print('scale below')
+            scale = list(scale_type(base - 12))
+            chord = theory.random_chord(scale)
+            play(chord)
+        else:
+            chord_over = sum((theory.overtones(n, 2) for n in chord), [])
+            print('with overtones', chord_over)
+            play(chord_over)
+
+        time.sleep(duration)
         unplay(chord)
 
-    print('clearing')
-    clear()
+    # print('clearing')
+    # clear()
 
 def on_stop():
     print('stop')
@@ -70,7 +98,6 @@ def cb(event, _):
     global last_clock, bpm, sync, running, samples
 
     msg, _ = event
-
     if msg[0] == TIMING_CLOCK:
         now = time.time()
 
@@ -100,25 +127,11 @@ def main():
     m_in.set_callback(cb)
     m_in.ignore_types(timing=False)
 
-    try:
-        print("Waiting for clock sync...")
-        # while True:
-        #     if clock.running:
-        #         if clock.sync:
-        #             pass
-        #             # print("%.2f bpm" % clock.bpm, duration)
-        #             # play([60], 1)
-        #         else:
-        #             print("%.2f bpm (no sync)" % clock.bpm)
-        while True:
-            pass
+    signal.signal(signal.SIGINT, signal_handler)
 
-    except KeyboardInterrupt:
+    print("Waiting for clock sync...")
+    while True:
         pass
-    finally:
-        m_in.close_port()
-        del m_in
-
 
 if __name__ == '__main__':
     main()

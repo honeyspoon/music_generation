@@ -1,5 +1,6 @@
 import itertools
 import random
+import math
 
 plus = lambda x, y: x+y
 def major_scale(note):
@@ -8,7 +9,30 @@ def major_scale(note):
     return itertools.accumulate(steps, plus, initial=note)
 
 def relative_note(note):
+    # TODO
     return 4
+
+step = 2 ** (1/12)
+first_note_freq = 8.175799
+
+def note_to_freq(note):
+    return step ** note * first_note_freq
+
+def freq_to_note(freq):
+    note = math.log(freq / first_note_freq) / math.log(step)
+    return round(note)
+
+def overtones(note, n=None):
+    last_note_freq = note_to_freq(127)
+    freq = note_to_freq(note)
+
+    smaller_than_last = lambda f: f <= last_note_freq
+    if n:
+        freqs = filter(smaller_than_last, (freq * i for i in range(1, n+1)))
+    else:
+        freqs = itertools.takewhile(smaller_than_last, (freq * i for i in itertools.count(1)))
+
+    return list(map(freq_to_note, freqs))
 
 def natural_minor_scale(note):
     steps = [2, 1, 2, 2, 1, 2, 2]
