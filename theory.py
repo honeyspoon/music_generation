@@ -1,4 +1,5 @@
 import itertools
+import collections
 import random
 import math
 
@@ -51,6 +52,15 @@ def perfect_ocatave(root):
 augmented_seventh = perfect_ocatave
 
 # chords
+def diatonic_major_chord(root, degree):
+    scale = major_scale(root)
+    note = scale[degree]
+    return [
+        note + 0,
+        note + 4,
+        note + 7
+    ]
+
 def major_chord(root):
     return [root, major_third(root), perfect_fifth(root)]
 
@@ -102,9 +112,8 @@ def overtones(note, n=None):
 
     return list(map(freq_to_note, freqs))
 
-def natural_minor_scale(note):
-    steps = [2, 1, 2, 2, 1, 2, 2]
-    return list(itertools.accumulate(steps, plus, initial=note))
+def natural_minor_scale(root):
+    return mode(root, 6)
 
 def harmonic_minor_scale(base):
     natural = natural_minor_scale(base)
@@ -120,15 +129,18 @@ def melodic_minor_scale(base):
     return natural
 
 plus = lambda x, y: x+y
-def major_scale(root):
-    steps = [2, 2, 1, 2, 2, 2, 1]
+def mode(root, mode_num):
+    steps = collections.deque([2, 2, 1, 2, 2, 2, 1])
+    steps.rotate(mode_num - 1)
 
     return list(itertools.accumulate(steps, plus, initial=root))
+
+def major_scale(root):
+    return mode(root, 1)
 
 def major_pentatonic_scale(root):
     steps = [7, 7, 7, 7]
     return list(itertools.accumulate(steps, plus, initial=root))
-
 
 def random_chord(scale):
     chord = set()
@@ -149,7 +161,8 @@ def random_chord(scale):
 
     return chord
 
-letters = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+letters = ['C/B♭', 'C♯/D♭', 'D', 'D♯/E♭', 'E/F♭', 'F/E♯', 'F♯/G♭', 'G', 'G♯/A♭', 'A', 'A♯/B♭', 'B/C♭']
+
 def note_to_letter(note):
     l = len(letters)
     octave = note // l - 1

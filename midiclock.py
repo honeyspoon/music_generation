@@ -7,6 +7,7 @@ import play
 import time
 
 import thread_ex
+import multiprocessing
 from collections import deque
 
 from rtmidi.midiconstants import NOTE_OFF, NOTE_ON
@@ -17,14 +18,6 @@ from rtmidi.midiconstants import (TIMING_CLOCK, SONG_CONTINUE, SONG_START, SONG_
 import rtmidi
 from rtmidi.midiutil import open_midiinput
 
-midiout = rtmidi.MidiOut()
-available_ports = midiout.get_ports()
-
-if available_ports:
-    midiout.open_port(0)
-else:
-    midiout.open_virtual_port("My virtual output")
-
 def signal_handler(sig, frame):
     print('cleanup')
     clear()
@@ -33,13 +26,18 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 def clear():
-    unplay([i for i in range(128)])
-
-def unplay(chord_notes):
-    notes_off = [[NOTE_OFF, i, 0] for i in chord_notes]
+    global event_q
+    notes_off = [[NOTE_OFF, i, 0] for i in range(128)]
     for off in notes_off:
-        midiout.send_message(off)
+        event_q.put(off)
 
+#     unplay([i for i in range(128)])
+
+# def unplay(chord_notes):
+#     notes_off = [[NOTE_OFF, i, 0] for i in chord_notes]
+#     for off in notes_off:
+#         midiout.send_message(off)
+#
 # def play(chord_notes, v=100):
 #     notes = [[NOTE_ON, i, v] for i in chord_notes]
 #     for note in notes:
@@ -50,7 +48,9 @@ sync = False
 running = True
 samples = deque(maxlen=24)
 last_clock = None
-threads = []
+# threads = []
+procs = []
+event_q = multiprocessing.Queue()
 
 def print_tracks(tracks):
     w,_ = os.get_terminal_size()
@@ -98,15 +98,10 @@ def print_tracks(tracks):
 
     print()
 
-def on_start():
+def on_start(event_q):
     print(time.time(), 'start')
-    global running
     base = 65
-
     while True:
-        if not running:
-            break
-
         scale = theory.major_scale(base)
         progression = [
             (1, theory.minor_seventh_chord),
@@ -134,21 +129,42 @@ def on_start():
         tracks = [sorted(track, key=lambda e: e[1]) for track in tracks]
 
         print_tracks(tracks)
-        play.play_midi_events(midiout, tracks, bpm)
+        play.play_midi_events(tracks, bpm, event_q)
 
 def on_stop():
     print(time.time(), 'stop')
     clear()
 
-def kill_threads(threads):
-    print('killing threads', threads)
-    for t in threads:
-        t.raise_exception()
+def send_events(q):
+    midiout = rtmidi.MidiOut()
+    available_ports = midiout.get_ports()
+
+    if available_ports:
+        midiout.open_port(0)
+    else:
+        midiout.open_virtual_port("My virtual output")
+
+    while True:
+        event = q.get()
+
+        if event[0] != 128:
+            print('new event', event)
+        midiout.send_message(event)
+        # play.play_midi_events(midiout)
+
+
+def kill_procs(procs):
+    print('killing procs', procs)
+    for p in procs:
+        p.terminate()
 
 def cb(event, _):
-    global last_clock, bpm, sync, running, samples, threads
+    global last_clock, bpm, sync, running, samples, procs, event_q
 
     msg, _ = event
+
+    multiprocessing.Process(target = send_events, args = (event_q,)).start()
+
     if msg[0] == TIMING_CLOCK:
         now = time.time()
 
@@ -162,14 +178,17 @@ def cb(event, _):
             sync = True
 
     elif msg[0] in (SONG_CONTINUE, SONG_START):
-        kill_threads(threads)
+        kill_procs(procs)
         running = True
-        thread = thread_ex.thread_with_exception(on_start)
-        thread.start()
-        threads.append(thread)
+        p = thread_ex.thread_with_exception(on_start)
+
+        p = multiprocessing.Process(target=on_start, args=(event_q, ))
+
+        p.start()
+        procs.append(p)
     elif msg[0] == SONG_STOP:
         running = False
-        kill_threads(threads)
+        kill_procs(procs)
         on_stop()
 
 def main():
